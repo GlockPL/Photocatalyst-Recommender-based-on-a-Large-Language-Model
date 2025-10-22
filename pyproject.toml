@@ -1,0 +1,14 @@
+[project]
+name = "photocatalyst-recommender-based-on-a-large-language-model"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=2.3.4",
+    "scikit-learn>=1.7.2",
+    "torch>=2.9.0",
+    "torchmetrics>=1.8.2",
+    "tqdm>=4.67.1",
+    "transformers>=4.57.1",
+]
