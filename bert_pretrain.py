@@ -32,7 +32,7 @@ class Dataset(torch.utils.data.Dataset):
 
 
 def main():
-    with open('./pretraining_data.pickle', 'rb') as pickle_file:
+    with open('data/pretraining_data.pickle', 'rb') as pickle_file:
         data_dict = pickle.load(pickle_file)
     print("Tokenizing...")
     max_length = 1024

@@ -32,7 +32,7 @@ def train_tokenizer(files):
 
 
 if __name__ == "__main__":
-    with open('./pretraining_data.pickle', 'rb') as pickle_file:
+    with open('data/pretraining_data.pickle', 'rb') as pickle_file:
         data_dict = pickle.load(pickle_file)
 
     lines = ""
