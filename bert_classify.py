@@ -1,14 +1,13 @@
 import numpy as np
 import random
 from tqdm import tqdm
-import  pickle
+import pickle
 import re
-from sklearn.model_selection import KFold, StratifiedKFold
-
+from sklearn.model_selection import StratifiedKFold
 
 import torch
 from torch.optim import AdamW
-from transformers import  RobertaTokenizer
+from transformers import RobertaTokenizer
 from torchmetrics import Accuracy, F1Score
 from torch import nn
 
@@ -32,8 +31,6 @@ class CatalsDataset(torch.utils.data.Dataset):
         self.encodings = encodings
 
     def __getitem__(self, idx):
-        # item = {key: torch.tensor(val[idx]) for key, val in self.encodings.items()}
-        # item['labels'] = torch.tensor(self.labels[idx])
         return self.encodings[idx]
 
     def __len__(self):
@@ -67,7 +64,8 @@ def main():
         data_dict = pickle.load(pickle_file)
     # model, tokenizer = get_default_model_and_tokenizer()
     first_class = np.argmax(np.array(data_dict['y'][0]))
-    print(f"First React: {data_dict['reactions'][0]} and Group: {data_dict['groups'][0]}. Corresponding class: {first_class}")
+    print(
+        f"First React: {data_dict['reactions'][0]} and Group: {data_dict['groups'][0]}. Corresponding class: {first_class}")
 
     print("Tokenizing!")
     print(f"Word length:{Bcolors.OKBLUE} {max_len}{Bcolors.ENDC}")
@@ -95,14 +93,13 @@ def main():
     print(f"{Bcolors.OKBLUE}Size of the dataset: {len(dataset)}{Bcolors.ENDC}")
     random.shuffle(dataset)
     n_splits = 5
-    kf = KFold(n_splits=n_splits)#, random_state=np.random.RandomState(1234), shuffle=True)
-    # indices = np.arange(y.shape[0])
     accs = []
     f1s = []
     f1s_macro = []
-    skf = StratifiedKFold(n_splits=n_splits, shuffle=True)
+    skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=43)
 
     fold = 0
+    fold_indices = {}
     for train_index, test_index in skf.split(dataset, y_class):
         model = AutoModelForSequenceClassification.from_pretrained(model_path,
                                                                    num_labels=class_amount,
@@ -117,7 +114,8 @@ def main():
         dataloader_train = torch.utils.data.DataLoader(CatalsDataset(dataset_train), batch_size=16)
         dataloader_test = torch.utils.data.DataLoader(CatalsDataset(dataset_test), batch_size=6)
 
-        print(f"{Bcolors.OKBLUE}Trainig batched size: {len(dataloader_train)}, valid batched size: {len(dataloader_test)}{Bcolors.ENDC}")
+        print(
+            f"{Bcolors.OKBLUE}Trainig batched size: {len(dataloader_train)}, valid batched size: {len(dataloader_test)}{Bcolors.ENDC}")
 
         device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
         model = nn.DataParallel(model)
@@ -141,23 +139,24 @@ def main():
             train_f1_macro = 0.0
 
             for batch in loop:
+                optim.zero_grad()
                 batch = {k: v.to(device) for k, v in batch.items()}
                 labels = batch["labels"]
                 outputs = model(**batch)
                 loss = outputs.loss
                 logits = outputs.logits
-                loss.sum().backward()
+                loss.backward()
                 optim.step()
-                train_loss += loss.sum().item()
+                train_loss += loss.item()
                 current_acc = confmat(logits, labels)
                 train_acc += current_acc
                 train_f1 += f1(logits, labels)
                 train_f1_macro += f1_macro(logits, labels)
-                loop.set_description(f'Epoch {epoch+1}')
-                loop.set_postfix(loss=loss.sum().item(), acc=current_acc.detach().cpu().numpy())
-                optim.zero_grad()
+                loop.set_description(f'Epoch {epoch + 1}')
+                loop.set_postfix(loss=loss.item(), acc=current_acc.detach().cpu().numpy())
 
-            print(f"{Bcolors.OKBLUE}Trainig accuracy: {(train_acc / len(train_loader)):.4f}, Training F1: {(train_f1/len(train_loader)):.4f}, Training F1 Macro: {(train_f1_macro/len(train_loader)):.4f}{Bcolors.ENDC}")
+            print(
+                f"{Bcolors.OKBLUE}Trainig accuracy: {(train_acc / len(train_loader)):.4f}, Training F1: {(train_f1 / len(train_loader)):.4f}, Training F1 Macro: {(train_f1_macro / len(train_loader)):.4f}{Bcolors.ENDC}")
 
             valid_loss = 0.0
             acc = 0.0
@@ -168,15 +167,15 @@ def main():
                 batch = {k: v.to(device) for k, v in batch.items()}
                 with torch.no_grad():
                     outputs = model(**batch)
-                loss = outputs.loss.sum()
+                loss = outputs.loss
                 logits = outputs.logits
                 labels = batch["labels"]
                 acc += confmat(logits, labels)
                 val_f1 += f1(logits, labels)
                 val_f1_macro += f1_macro(logits, labels)
-                valid_loss = loss.item()
+                valid_loss += loss.item()
 
-            if epoch == epochs-1:
+            if epoch == epochs - 1:
                 accs.append(acc.cpu() / len(dataloader_test))
                 f1s.append(val_f1.cpu() / len(dataloader_test))
                 f1s_macro.append(val_f1_macro.cpu() / len(dataloader_test))
@@ -186,22 +185,15 @@ def main():
             print(
                 f'Epoch {epoch + 1} \t\t Training F1 Macro: {(train_f1_macro / len(train_loader)):.4f} \t Validation F1 Macro: {(val_f1_macro / len(dataloader_test)):.4f}')
             if min_valid_loss > valid_loss:
-                print(f'Validation Loss Decreased({min_valid_loss:.6f}--->{valid_loss:.6f})')# \t Saving The Model
+                print(f'Validation Loss Decreased({min_valid_loss:.6f}--->{valid_loss:.6f})')  # \t Saving The Model
                 min_valid_loss = valid_loss
-                # Saving State Dict
-                val_norm = valid_loss / len(dataloader_test)
-                # save_onnx(model.module, f'./checkpoints/saved_model_checkpnt_val_loss_{val_norm:.4f}_epoch_{epoch}.onnx', shape_in)
-                # model.module.save_pretrained(f'./checkpoints/saved_model_checkpnt_val_loss_{val_norm:.4f}_epoch_{epoch}.pth')
 
         model.eval()
 
         save_model = model.module
         # save_pretrained
-        path_to_save = f'./KFold/reactioberto_classify_photocatals_fold_{fold}_val_acc_{(acc/len(dataloader_test)):.4f}_val_f1_{(val_f1/len(dataloader_test)):.4f}'
+        path_to_save = f'./KFold/reactioberto_classify_photocatals_fold_{fold}_val_acc_{(acc / len(dataloader_test)):.4f}_val_f1_{(val_f1 / len(dataloader_test)):.4f}'
         save_model.save_pretrained(path_to_save)
-        # save_onnx(save_model, f"./KFold/reactioberto_classify_photocatals_fold_{fold}.onnx", shape_in)
-        # torch.save(save_model.state_dict(), './KFold/reactioberto_classify_photocatals.bin')
-        # save_model.config.to_json_file('./KFold/reactioberto_classify_photocatals.json')
         del model
 
         print("Testing Model on training data for bugs!")
@@ -223,6 +215,17 @@ def main():
 
         del model
 
+        # Store indices for this fold
+        fold_indices[f'fold_{fold}'] = {
+            'train_indices': train_index.tolist(),
+            'test_indices': test_index.tolist()
+        }
+
+    # Save fold indices to pickle file
+    with open('./fold_split_indices.pickle', 'wb') as f:
+        pickle.dump(fold_indices, f)
+    print(f"Fold indices saved to ./fold_split_indices.pickle")
+
     accs = np.array(accs)
     f1s = np.array(f1s)
     f1s_macro = np.array(f1s_macro)
@@ -236,43 +239,44 @@ def main():
     print(res)
 
     model = AutoModelForSequenceClassification.from_pretrained(model_path,
-                                                                   num_labels=class_amount,
-                                                                   id2label=data_dict['catal_num_to_smiles_map'],
-                                                                   label2id=data_dict['catal_smiles_to_num_map'])
+                                                               num_labels=class_amount,
+                                                               id2label=data_dict['catal_num_to_smiles_map'],
+                                                               label2id=data_dict['catal_smiles_to_num_map'])
     dataloader_train = torch.utils.data.DataLoader(CatalsDataset(dataset), batch_size=16)
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     model = nn.DataParallel(model)
     model.to(device)
     model.train()
     optim = AdamW(model.parameters(), lr=2e-5)
+    confmat_final = Accuracy(num_classes=class_amount).to(device)
+    epochs = 6
     for epoch in range(epochs):
-            train_loss = 0.0
-            model.train()
-            loop = tqdm(train_loader, leave=True)
-            train_acc = 0.0
-            train_f1 = 0.0
+        train_loss = 0.0
+        model.train()
+        loop = tqdm(dataloader_train, leave=True)
+        train_acc = 0.0
+        train_f1 = 0.0
 
-            for batch in loop:
-                batch = {k: v.to(device) for k, v in batch.items()}
-                labels = batch["labels"]
-                outputs = model(**batch)
-                loss = outputs.loss
-                logits = outputs.logits
-                loss.sum().backward()
-                optim.step()
-                train_loss += loss.sum().item()
-                current_acc = confmat(logits, labels)
-                train_acc += current_acc
-                loop.set_description(f'Epoch {epoch+1}')
-                loop.set_postfix(loss=loss.sum().item(), acc=current_acc.detach().cpu().numpy())
-                optim.zero_grad()
+        for batch in loop:
+            optim.zero_grad()
+            batch = {k: v.to(device) for k, v in batch.items()}
+            labels = batch["labels"]
+            outputs = model(**batch)
+            loss = outputs.loss
+            logits = outputs.logits
+            loss.backward()
+            optim.step()
+            train_loss += loss.item()
+            current_acc = confmat_final(logits, labels)
+            train_acc += current_acc
+            loop.set_description(f'Epoch {epoch + 1}')
+            loop.set_postfix(loss=loss.item(), acc=current_acc.detach().cpu().numpy())
 
     model.eval()
 
     save_model = model.module
 
     save_model.save_pretrained(f'./reactioberto_classify_photocatals_corrected_dataset_word_len_{max_len}')
-   
 
 
 if __name__ == "__main__":

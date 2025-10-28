@@ -87,8 +87,16 @@ A Python pickle file containing a dictionary with:
 }
 ```
 
-#### 2. **bertaction_corrected_catals.pickle** (For fine-tuning)
-A Python pickle file containing a dictionary with:
+#### 2. **Fine-tuning Data (Photocatalyst Classification)**
+
+Due to Reaxys policy restrictions on direct data distribution, the fine-tuning dataset is not included in this repository. However, the data structure and photocatalyst information are documented here.
+
+**Data Source**: `@data/finetunning_rxid.xlsx`
+- Contains Reaxys reaction IDs with assigned photocatalyst IDs
+- Used to construct the classification dataset for fine-tuning
+
+**Expected Data Structure**:
+The fine-tuning data should be a Python pickle file containing a dictionary with:
 ```python
 {
     'reactions': [list of chemical reaction SMILES strings],
@@ -98,10 +106,9 @@ A Python pickle file containing a dictionary with:
     'catal_smiles_to_num_map': {SMILES_string: catalyst_id}
 }
 ```
-- **Purpose**: Classification fine-tuning data with labeled photocatalysts
 - **Parallel structure**: `reactions[i]`, `groups[i]`, and `y[i]` correspond to the same sample
 - **y format**: 2D numpy array of shape (num_samples, num_catalysts) with one-hot encoding
-- **Usage**: Used in stage 3
+- **Usage**: Used in stage 3 (Fine-tuning for classification)
 
 ## 🚀 Training Pipeline
 
@@ -189,7 +196,7 @@ uv run bert_pretrain.py
 
 **Input**:
 - Pre-trained model (from Stage 2)
-- `bertaction_corrected_catals.pickle`
+- Fine-tuning classification data with labeled catalysts
 - `BPETokenizer/` (from Stage 1)
 
 **Output**:
@@ -256,7 +263,8 @@ KFold/
 ├── bert_pretrain.py                  # Stage 2: Pre-train RoBERTa
 ├── bert_classify.py                  # Stage 3: Fine-tune for classification
 ├── pretraining_data.pickle           # Training data (reactions + groups)
-├── bertaction_corrected_catals.pickle # Classification labels (optional)
+├── data/
+│   └── finetunning_rxid.xlsx         # Reaxys reaction IDs with catalyst assignments
 ├── BPETokenizer/                     # Trained tokenizer (output of Stage 1)
 │   ├── vocab.json                    # BPE vocabulary
 │   └── merges.txt                    # BPE merge rules
@@ -281,14 +289,6 @@ uv run bert_pretrain.py
 # Stage 3: Fine-tune for Classification (4-12 hours)
 uv run bert_classify.py
 ```
-
-### Typical Total Time
-**7-33 hours** depending on:
-- Dataset size
-- GPU memory and compute power
-- Number of catalyst classes
-- Sequence length
-
 ## 💡 Key Concepts
 
 ### Byte-Pair Encoding (BPE)
@@ -314,26 +314,6 @@ uv run bert_classify.py
 - Maintains class distribution in each fold
 - Prevents data leakage and biased evaluation
 - Provides multiple trained models for ensemble methods
-
-## 📊 Expected Results
-
-After completing all three stages, you should have:
-
-1. **BPE Tokenizer** (Stage 1)
-   - Vocabulary of ~30K tokens
-   - Compact representation of chemical data
-
-2. **Pre-trained Model** (Stage 2)
-   - RoBERTa model with domain knowledge
-   - Can be used for transfer learning
-   - Lower perplexity on held-out data
-
-3. **Classification Models** (Stage 3)
-   - 5 fold-specific models with individual metrics
-   - 1 final model trained on full dataset
-   - Cross-validation metrics:
-     - Mean Accuracy: ~90-95%
-     - Mean F1 Score: ~88-92%
 
 ## 🔍 Monitoring Training
 
@@ -382,16 +362,6 @@ optimizer = torch.optim.AdamW(model.parameters(), lr=1e-5)
 # Change batch size
 train_batch_size = 32
 ```
-
-### Model Export to ONNX
-
-To export the fine-tuned model to ONNX format for production deployment:
-
-```python
-# In bert_classify.py, uncomment the save_onnx function
-save_onnx(best_model, tokenizer, output_path="model.onnx")
-```
-
 ## 📝 Data Format Details
 
 ### Reaction SMILES Format
@@ -416,42 +386,47 @@ cB(O)O.ccc.n>>c.cc(c)-n
 
 These represent chemical transformations or reaction fragments that pair with the main reactions in the parallel `reactions` list.
 
-### One-Hot Encoding for Catalysts
+### Photocatalyst ID to SMILES Mapping
 
-Labels are one-hot encoded 2D arrays:
-```python
-# 3 catalysts, sample has catalyst 0
-y = [[1, 0, 0]]
+The fine-tuning dataset includes 31 photocatalysts identified by numeric IDs. The following table maps each ID to its corresponding SMILES string:
 
-# 3 catalysts, sample has catalyst 1
-y = [[0, 1, 0]]
+| ID | SMILES |
+|---|---|
+| 0 | CC(C)(C)c1ccnc(-c2cc(C(C)(C)C)ccn2)c1.c1ccc(-c2ccccc2[Ir]c2ccccc2-c2ccccn2)nc1 |
+| 1 | [Ru].c1cnc2c(c1)ccc1cccnc12.c1cnc2c(c1)ccc1cccnc12.c1cnc2c(c1)ccc1cccnc12 |
+| 2 | c1ccc(-c2ccccc2[Ir](c2ccccc2-c2ccccn2)c2ccccc2-c2ccccn2)nc1 |
+| 3 | [Ru].c1ccc(-c2ccccn2)nc1.c1ccc(-c2ccccn2)nc1.c1ccc(-c2ccccn2)nc1 |
+| 4 | COc1ccc(-c2ccc3ccc4ccc(-c5ccc(OC)cc5)nc4c3n2)cc1.COc1ccc(-c2ccc3ccc4ccc(-c5ccc(OC)cc5)nc4c3n2)cc1.[Cu+] |
+| 5 | Fc1ccc(-c2ccccn2)c(F)c1.Fc1ccc(-c2ccccn2)c(F)c1.Fc1ccc(-c2ccccn2)c(F)c1.[Ir] |
+| 6 | CC(C)(C)c1ccnc(-c2cc(C(C)(C)C)ccn2)c1.Fc1ccc(-c2ccc(C(F)(F)F)cn2)c(F)c1.Fc1ccc(-c2ccc(C(F)(F)F)cn2)c(F)c1.[Ir+] |
+| 7 | CC1(C)c2cccc(P(c3ccccc3)c3ccccc3)c2Oc2c(P(c3ccccc3)c3ccccc3)cccc21.Cc1ccc2ccc3ccc(C)nc3c2n1.[Cu+] |
+| 8 | [Ru].c1cnc(-c2cnccn2)cn1.c1cnc(-c2cnccn2)cn1.c1cnc(-c2cnccn2)cn1 |
+| 9 | CC(C)(C)c1ccnc(-c2cc(C(C)(C)C)ccn2)c1.CC(C)(C)c1ccnc(-c2cc(C(C)(C)C)ccn2)c1.CC(C)(C)c1ccnc(-c2cc(C(C)(C)C)ccn2)c1.[Ru] |
+| 10 | N#Cc1c(N(c2ccccc2)c2ccccc2)c(C#N)c(N(c2ccccc2)c2ccccc2)c(N(c2ccccc2)c2ccccc2)c1N(c1ccccc1)c1ccccc1 |
+| 11 | O=C1c2ccccc2C(=O)c2ccccc21 |
+| 12 | CCN(CC)c1ccc2c(-c3ccccc3C(=O)O)c3ccc(=[N+](CC)CC)cc-3oc2c1 |
+| 13 | c1ccc(-c2cc(-c3ccccc3)[o+]c(-c3ccccc3)c2)cc1 |
+| 14 | O=C1C(Cl)=C(Cl)C(=O)C(Cl)=C1Cl |
+| 15 | O=C1c2ccccc2-c2ccccc21 |
+| 16 | N#Cc1c2ccccc2c(C#N)c2ccccc12 |
+| 17 | N#Cc1c(-n2c3ccccc3c3ccccc32)c(C#N)c(-n2c3ccccc3c3ccccc32)c(-n2c3ccccc3c3ccccc32)c1-n1c2ccccc2c2ccccc21 |
+| 18 | c1ccc(N2c3ccccc3Sc3ccccc32)cc1 |
+| 19 | O=C1OC2(c3ccc(O)cc3Oc3cc(O)ccc32)c2ccccc21 |
+| 20 | N#Cc1ccc(C#N)c2ccccc12 |
+| 21 | O=C([O-])c1c(Cl)c(Cl)c(Cl)c(Cl)c1-c1c2cc(I)c(=O)c(I)c-2oc2c(I)c([O-])c(I)cc12 |
+| 22 | CN(C)c1ccc2nc3ccc(=[N+](C)C)cc-3sc2c1 |
+| 23 | CN(C)c1ccc(C(=O)c2ccc(N(C)C)cc2)cc1 |
+| 24 | O=c1c2ccccc2sc2ccccc12 |
+| 25 | Cc1cc(C)c(-c2c3ccccc3[n+](C)c3ccccc23)c(C)c1 |
+| 26 | O=c1c2ccccc2oc2ccccc12 |
+| 27 | O=C(c1ccccc1)c1ccccc1 |
+| 28 | N#Cc1ccc(C#N)cc1 |
+| 29 | CCNc1cc2oc3cc(=[NH+]CC)c(C)cc-3c(-c3ccccc3C(=O)OCC)c2cc1C |
+| 30 | O=C(O)c1ccccc1-c1c2cc(Br)c(=O)c(Br)c-2oc2c(Br)c(O)c(Br)cc12 |
 
-# Multi-label: sample has catalysts 0 and 2
-y = [[1, 0, 1]]
-```
+**Total number of photocatalysts**: 31
 
-## 🐛 Troubleshooting
-
-### OutOfMemory Error
-- Reduce batch size in the training script
-- Use a GPU with more memory
-- Process shorter sequences
-
-### Slow Training
-- Use a GPU with better compute capability
-- Reduce dataset size for testing
-- Check system resources (CPU/memory not bottlenecking)
-
-### Low Classification Accuracy
-- Ensure labeled data has balanced classes
-- Increase pre-training dataset size
-- Increase number of pre-training epochs
-- Use longer sequences (increase max_length)
-
-### Tokenizer Not Found
-- Ensure Stage 1 (bert_tokenizer.py) is run before Stage 2
-- Check that `BPETokenizer/` directory exists
-- Verify vocab.json and merges.txt files are present
+These catalysts include a variety of organic dyes, metal complexes, and heterogeneous photocatalysts commonly used in organic synthesis.
 
 ## 📚 References
 
@@ -459,13 +434,3 @@ y = [[1, 0, 1]]
 - [RoBERTa: A Robustly Optimized BERT Pretraining Approach](https://arxiv.org/abs/1907.11692)
 - [Hugging Face Transformers Documentation](https://huggingface.co/docs/transformers)
 - [Byte Pair Encoding (BPE)](https://en.wikipedia.org/wiki/Byte_pair_encoding)
-
-## 📧 Contact
-
-For questions or issues, please open an issue in the repository.
-
----
-
-**Last Updated**: October 2025
-**Python Version**: 3.11+
-**Status**: Active Development

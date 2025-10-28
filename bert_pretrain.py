@@ -103,7 +103,7 @@ def main():
             loop.set_postfix(loss=loss.item())
 
     save_model = model
-    save_model.save_pretrained(f'./reactioberto_reaction_count_{len(data_dict["reactions"])}_world_len_{max_length}')
+    save_model.save_pretrained(f'./pretrained_reaction_count_{len(data_dict["reactions"])}_world_len_{max_length}')
 
 if __name__ == "__main__":
     main()
