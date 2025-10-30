@@ -35,9 +35,13 @@ def main():
     with open('data/pretraining_data.pickle', 'rb') as pickle_file:
         data_dict = pickle.load(pickle_file)
     print("Tokenizing...")
+    # ========== CONFIG
     max_length = 1024
+    epochs = 3
+    batch_size = 32
     tokenizer = RobertaTokenizer.from_pretrained("./BPETokenizer/")
-    batch_token = tokenizer(data_dict['reactions'], data_dict['groups'], max_length=max_length, padding='max_length',
+    samples = len(data_dict['reactions'])
+    batch_token = tokenizer(data_dict['reactions'][:samples], data_dict['groups'][:samples], max_length=max_length, padding='max_length',
                             truncation=True, return_tensors='pt')
     config = RobertaConfig(
         vocab_size=tokenizer.vocab_size,  # we align this to the tokenizer vocab_size
@@ -70,7 +74,7 @@ def main():
     encodings = {'input_ids': input_ids, 'attention_mask': attention_mask, 'labels': labels}
 
     dataset = Dataset(encodings)
-    loader = torch.utils.data.DataLoader(dataset, batch_size=18, shuffle=True)
+    loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     # model = nn.DataParallel(model)
@@ -79,7 +83,6 @@ def main():
     # initialize optimizer
     optim = AdamW(model.parameters(), lr=1e-4)
 
-    epochs = 3
     for epoch in range(epochs):
         loop = tqdm(loader, leave=True)
         for idx, batch in enumerate(loop):
@@ -103,7 +106,7 @@ def main():
             loop.set_postfix(loss=loss.item())
 
     save_model = model
-    save_model.save_pretrained(f'./pretrained_reaction_count_{len(data_dict["reactions"])}_world_len_{max_length}')
+    save_model.save_pretrained(f'./pretrained_reaction_count_{len(data_dict["reactions"])}_word_len_{max_length}')
 
 if __name__ == "__main__":
     main()

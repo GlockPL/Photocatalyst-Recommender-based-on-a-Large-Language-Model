@@ -37,32 +37,16 @@ class CatalsDataset(torch.utils.data.Dataset):
         return len(self.encodings)
 
 
-def save_onnx(model, path, shape):
-    # Input to the model
-    batch_size = 32
-    x = torch.randint(0, 591, (batch_size, shape[1]))
-    # torch_out = model(x)
-
-    # Export the model
-    torch.onnx.export(model,  # model being run
-                      x,  # model input (or a tuple for multiple inputs)
-                      path,  # where to save the model (can be a file or file-like object)
-                      export_params=True,  # store the trained parameter weights inside the model file
-                      opset_version=10,  # the ONNX version to export the model to
-                      do_constant_folding=True,  # whether to execute constant folding for optimization
-                      input_names=['input'],  # the model's input names
-                      output_names=['output'],  # the model's output names
-                      dynamic_axes={'input': {0: 'batch_size', 1: 'sel_len'},  # variable length axes
-                                    'output': {0: 'batch_size', 1: 'class_amount'}})
 
 
 def main():
-    model_path = "./reactioberto_reaction_count_1715395_word_len_1024_reactions_epochs_3_transf_v_4.19.2"
+    # Path to pretrained model
+    model_path = "./pretrained_reaction_count_3119043_word_len_1024"
     max_len_re = re.findall(r'word_len_([0-9]{3,4})', model_path)
     max_len = int(max_len_re[0])
-    with open('./bertaction_corrected_catals.pickle', 'rb') as pickle_file:
+    # Path to dict with the finetunning dataset
+    with open('./data/bertaction_corrected_catals.pickle', 'rb') as pickle_file:
         data_dict = pickle.load(pickle_file)
-    # model, tokenizer = get_default_model_and_tokenizer()
     first_class = np.argmax(np.array(data_dict['y'][0]))
     print(
         f"First React: {data_dict['reactions'][0]} and Group: {data_dict['groups'][0]}. Corresponding class: {first_class}")
@@ -70,7 +54,7 @@ def main():
     print("Tokenizing!")
     print(f"Word length:{Bcolors.OKBLUE} {max_len}{Bcolors.ENDC}")
     # 512 514
-    tokenizer = RobertaTokenizer.from_pretrained("./Tokenizer/")
+    tokenizer = RobertaTokenizer.from_pretrained("./BPETokenizer/")
     batch_token = tokenizer(data_dict['reactions'], data_dict['groups'], max_length=max_len, padding='max_length',
                             truncation=True, return_tensors='pt')
     print("Tokenization finished!")
@@ -110,12 +94,12 @@ def main():
 
         dataset_train = [dataset[x] for x in train_index]
         dataset_test = [dataset[x] for x in test_index]
-        print(f"{Bcolors.OKBLUE}Trainig size: {len(dataset_train)}, valid size: {len(dataset_test)}{Bcolors.ENDC}")
+        print(f"{Bcolors.OKBLUE}Training size: {len(dataset_train)}, valid size: {len(dataset_test)}{Bcolors.ENDC}")
         dataloader_train = torch.utils.data.DataLoader(CatalsDataset(dataset_train), batch_size=16)
         dataloader_test = torch.utils.data.DataLoader(CatalsDataset(dataset_test), batch_size=6)
 
         print(
-            f"{Bcolors.OKBLUE}Trainig batched size: {len(dataloader_train)}, valid batched size: {len(dataloader_test)}{Bcolors.ENDC}")
+            f"{Bcolors.OKBLUE}Training batched size: {len(dataloader_train)}, valid batched size: {len(dataloader_test)}{Bcolors.ENDC}")
 
         device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
         model = nn.DataParallel(model)
@@ -125,9 +109,9 @@ def main():
         train_loader = dataloader_train
 
         optim = AdamW(model.parameters(), lr=2e-5)
-        confmat = Accuracy(num_classes=class_amount).to(device)
-        f1 = F1Score(num_classes=class_amount, average='weighted').to(device)
-        f1_macro = F1Score(num_classes=class_amount, average='macro').to(device)
+        confmat = Accuracy(num_classes=class_amount, task="multiclass").to(device)
+        f1 = F1Score(num_classes=class_amount, average='weighted', task="multiclass").to(device)
+        f1_macro = F1Score(num_classes=class_amount, average='macro', task="multiclass").to(device)
         epochs = 6
         min_valid_loss = np.inf
         for epoch in range(epochs):
@@ -156,7 +140,7 @@ def main():
                 loop.set_postfix(loss=loss.item(), acc=current_acc.detach().cpu().numpy())
 
             print(
-                f"{Bcolors.OKBLUE}Trainig accuracy: {(train_acc / len(train_loader)):.4f}, Training F1: {(train_f1 / len(train_loader)):.4f}, Training F1 Macro: {(train_f1_macro / len(train_loader)):.4f}{Bcolors.ENDC}")
+                f"{Bcolors.OKBLUE}Training accuracy: {(train_acc / len(train_loader)):.4f}, Training F1: {(train_f1 / len(train_loader)):.4f}, Training F1 Macro: {(train_f1_macro / len(train_loader)):.4f}{Bcolors.ENDC}")
 
             valid_loss = 0.0
             acc = 0.0
@@ -222,7 +206,7 @@ def main():
         }
 
     # Save fold indices to pickle file
-    with open('./fold_split_indices.pickle', 'wb') as f:
+    with open('data/fold_split_indices.pickle', 'wb') as f:
         pickle.dump(fold_indices, f)
     print(f"Fold indices saved to ./fold_split_indices.pickle")
 
@@ -248,14 +232,13 @@ def main():
     model.to(device)
     model.train()
     optim = AdamW(model.parameters(), lr=2e-5)
-    confmat_final = Accuracy(num_classes=class_amount).to(device)
+    confmat_final = Accuracy(num_classes=class_amount, task="multiclass").to(device)
     epochs = 6
     for epoch in range(epochs):
         train_loss = 0.0
         model.train()
         loop = tqdm(dataloader_train, leave=True)
         train_acc = 0.0
-        train_f1 = 0.0
 
         for batch in loop:
             optim.zero_grad()
